@@ -1,0 +1,77 @@
+import numpy as np
+from scipy.integrate import solve_ivp
+
+# ============================================
+# Параметры
+# ============================================
+m = 1
+Ly = 3.5
+Lz = 1
+
+Lx_values = np.linspace(3.51, 1000, 400)
+
+omega0 = np.array([1.5, 30.0, 1.5])
+q0 = np.array([1.0, 0.0, 0.0, 0.0])
+y0 = np.concatenate([q0, omega0])
+
+t_max = 20
+t_eval = np.linspace(0, t_max, 1000)
+
+inv_periods = []
+
+# ============================================
+# ЦИКЛ
+# ============================================
+for Lx in Lx_values:
+
+    I_x = (m / 12.0) * (Ly**2 + Lz**2)
+    I_y = (m / 12.0) * (Lx**2 + Lz**2)
+    I_z = (m / 12.0) * (Lx**2 + Ly**2)
+
+    def euler_equations(t, omega):
+        wx, wy, wz = omega
+
+        Mx = (I_y - I_z) * wy * wz
+        My = (I_z - I_x) * wz * wx
+        Mz = (I_x - I_y) * wx * wy
+
+        return [Mx / I_x, My / I_y, Mz / I_z]
+
+    def quat_derivative(t, state):
+        q0_, q1, q2, q3, wx, wy, wz = state
+
+        omega_vec = np.array([wx, wy, wz])
+        q_vec = np.array([q1, q2, q3])
+
+        dq_scalar = -0.5 * np.dot(omega_vec, q_vec)
+        dq_vec = 0.5 * (q0_ * omega_vec + np.cross(omega_vec, q_vec))
+
+        dw = euler_equations(t, [wx, wy, wz])
+
+        return [dq_scalar, dq_vec[0], dq_vec[1], dq_vec[2], dw[0], dw[1], dw[2]]
+
+    sol = solve_ivp(quat_derivative, [0, t_max], y0, t_eval=t_eval, rtol=1e-8)
+
+    omega_sol = sol.y[4:].T
+
+    sign_changes = np.where(np.diff(np.sign(omega_sol[:, 1])))[0]
+
+    if len(sign_changes) > 1:
+        T = np.mean(np.diff(sol.t[sign_changes])) * 2
+        inv_T = 1.0 / T
+    else:
+        inv_T = np.nan
+
+    inv_periods.append(inv_T)
+
+# ============================================
+# ВЫВОД: сначала все Lx, потом все T
+# ============================================
+
+print("Lx:")
+for Lx in Lx_values:
+    print(f"{Lx:.5f},")
+
+print("\nPeriods:")
+for T in inv_periods:
+    print(f"{T:.5f},")
